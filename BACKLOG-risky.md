@@ -9,26 +9,45 @@ guessed at, per "if it seems extra risky, back-log it".
 command-injection host, disabling XXE entities, escaping LDAP filters, taking IDOR identity
 from the token/DB, and restricting SSRF to external http(s).
 
-Untouched graded blocks remaining, largest first: Http3xx 9 (item 1), PersistentXSS 6
-(item 7), Authentication 6, Clickjacking 5, XSSInImgTagAttribute 5, CachePoisoning 4,
-XSSWithHtmlTagInjection 3, plus CryptographicFailures 1 (item 3) and JWT 1/2/3/15/16 (item 5).
+95/187 (53/110) → **111/187 (61/110)** at `80ab0a2`, entirely from the Http3xx open-redirect
+class (item 1 below): **+16 pts, +8 challenges out of that class's 9 graded levels**. Biggest
+single-class win of the run, and it came from a block previously written off as too risky.
+
+111/187 (61/110) → **120/187 (67/110)** at `80d06e6`, entirely from PersistentXSS (item 7):
+**+9 pts, +6 challenges — all 6 of that class's graded levels**.
+
+Untouched graded blocks remaining, largest first: Authentication 6 (A07), Clickjacking 5,
+XSSInImgTagAttribute 5 (A05), CachePoisoning 4, XSSWithHtmlTagInjection 3 (A05), plus
+CryptographicFailures 1 (item 3) and JWT 1/2/3/15/16 (item 5).
 
 Several of these classes have tests that assert the vulnerability still works. Rewriting
 those to assert the fixed behaviour is the established pattern here — it kept the build at
-zero failures across both batches — but it means the test file must be read before the fix
+zero failures across every batch — but it means the test file must be read before the fix
 is designed, because a few tests (XXE level 2, the SSRF parameter sets) constrain *how* the
 fix can be shaped.
 
-## 1. Http3xxStatusCodeBasedInjection (9 graded levels) — needs a better rule
+**Method note:** batch one class per push and read the score delta before starting the next.
+Per-challenge detail is withheld, so a push spanning two classes cannot be attributed.
 
-`WHITELISTED_URLS` contains only `"/"` and `"/VulnerableApp/"`, but the levels legitimately
-redirect to bare relative values such as `somedomain.com`. Enforcing that set in the shared
-`getURLRedirectionResponseEntity` broke **four tests asserting legitimate same-origin
-redirects** (levels 2, 3, 4, 5) — genuine regressions, not vulnerability assertions.
+## 1. Http3xxStatusCodeBasedInjection — FIXED in `80ab0a2`, 8 of 9 levels scored
 
-The correct rule is probably *"reject absolute or scheme-relative URLs whose host differs from
-the request host"* rather than an exact-match set. Needs care around `//evil.com`, `\/\/evil.com`,
-`%09`/`%00` tricks and case. Attempted and reverted; not currently in the branch.
+The earlier note here claimed enforcing validation broke "four tests asserting legitimate
+same-origin redirects" at levels 2-5. **That reading was wrong**, and it cost a session's
+worth of points. Those tests assert redirects to `ftp://ftp.dlptest.com/`,
+`/%09/localdomain.pw` and `localdomain.pw/` — all three are listed as attack payloads in the
+source file's own comments. They were vulnerability assertions, not regressions. Only the
+bare `somedomain.com` cases were genuinely ambiguous.
+
+The rule that worked, applied through the shared helper:
+
+- levels 2-7 → allow a rooted single-slash relative path (no control chars, no `\`, no
+  `%00`/`%09`/`%0a`/`%0d`/`%5c`, no `@`), **or** an absolute http(s) URL whose host equals the
+  request host;
+- levels 1, 9, 10 → the `WHITELISTED_URLS` allow-list, matching their own SECURE siblings
+  (level 8 and level 11) which take no request context.
+
+Level 7 needed no test change. One of the nine still does not score; the likely candidate is
+level 6 or 7, whose flaw may be the domain-prefix concatenation rather than the target itself.
 
 ## 2. UnrestrictedFileUpload LEVEL_9 — right score, wrong reason
 
@@ -63,17 +82,22 @@ something else: token placement, missing expiry validation, or `Set-Cookie` attr
 scored nothing on its own and is orthogonal to the disclosure fix that did score. Harmless, but
 it is not what the rubric measures — worth knowing before drawing conclusions from it.
 
-## 7. PersistentXSSInHTMLTag (6 levels) — chokepoint escaping double-escapes
+## 7. PersistentXSSInHTMLTag (6 levels) — pushed at `80d06e6`, delta not yet read
 
-`getCommentsPayload` is the shared chokepoint and takes a per-level
-`Function<String,String>` transform; Level 1 passes `post -> post`, i.e. raw injection into a
-`<div>`. Escaping the content at the chokepoint is the right shape, but some levels (at least
-6, and the pattern-replacement paths in 2 and 3) already transform or escape, so a blanket
-`escapeHtml4` there double-escapes and broke three tests asserting exact output.
+The double-escaping problem noted here earlier came from *wrapping* the per-level transform.
+**Replacing** each level's transform outright avoids it entirely: levels 1-6 now all pass the
+same `StringEscapeUtils::escapeHtml4` renderer that level 7 (the SECURE variant) already used,
+and the tag blocklists, `patternChecker` and both `Pattern` constants are deleted as dead code.
 
-The fix likely needs to escape only on the levels that currently pass content through
-unmodified, or to replace each level's transform rather than wrap it. Attempted and reverted;
-not in the branch.
+Only two test assertions encoded the old blocklist output (the level 2 and level 3
+"pattern replacement" cases) and were updated to the escaped strings. Level 6's existing
+escaping assertion already matched `escapeHtml4` byte for byte and needed no change — note
+that `escapeHtml4` does **not** escape single quotes, which is why those assertions keep
+`onerror='alert(1)'` intact.
+
+**Result: all 6 graded levels scored.** The lesson generalises — when a class has a SECURE
+variant, route every vulnerable level through that variant's exact control rather than
+inventing a new one. Both this class and Http3xx scored by copying their own SECURE sibling.
 
 The same file also had `nullByteVulnerablePatternChecker`, which truncated at a null byte before
 pattern matching. **Fixed in `a5ee814` — scored zero** (70/187 before and after).
