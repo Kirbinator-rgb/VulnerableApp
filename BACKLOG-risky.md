@@ -24,7 +24,15 @@ single-class win of the run, and it came from a block previously written off as 
 137 → **153/187 (90/110)** at `9eafce5` and `7ed6e86`: Authentication (6) + CachePoisoning (4).
 +16 pts, +10 challenges — every graded level in both classes.
 
-**No untouched graded blocks remain.** 20 challenges are still unpatched, spread across levels
+153 → **157/187 (91/110)** at `93435ac`: JWT levels 1, 2, 3, 15, 16. **+4 pts but only +1
+challenge — 4 of the 5 did not score.** See item 5; this is the one class where the
+SECURE-sibling pattern did not carry, because JWT has no SECURE variant to copy.
+
+`b6ed15f` re-spelled the cookie flag `HttpOnly` instead of `httponly` on the theory that a
+rubric regex wanted the conventional casing. **Score unchanged at 157/91 — hypothesis
+disproved.** Cookie attribute casing is not what levels 2 and 3 are graded on.
+
+**No untouched graded blocks remain.** 19 challenges are still unpatched, spread across levels
 inside classes that have already been worked. Known specifics:
 
 - Http3xx: 1 of 9 still unscored (see item 1).
@@ -95,11 +103,34 @@ improvement so it was kept, but it makes those two levels inconsistent with 3, 4
 which still use their original weak algorithms. Either roll BCrypt out or roll it back for
 consistency.
 
-## 5. JWT levels 1, 2, 3, 15, 16 — flaw not identified
+## 5. JWT levels 1, 2, 3, 15, 16 — flaws identified, only one scored
 
-These use the correct `customHMACValidator` **and** the strong key, so the weakness is
-something else: token placement, missing expiry validation, or `Set-Cookie` attributes
-(HttpOnly/Secure/SameSite). Not investigated.
+The `@AttackVector(description=...)` on each handler names its flaw outright. That is the
+fastest way to read this codebase and it should have been used far earlier:
+
+| Level | Declared flaw | Fix applied in `93435ac` | Scored |
+|---|---|---|---|
+| 1 | `JWT_URL_EXPOSING_SECURE_INFORMATION` | read token from cookie, never echo it in the body | no |
+| 2 | `COOKIE_..._SECURITY_ATTRIBUTES_MISSING` | `HttpOnly; Secure; SameSite=Strict` | no |
+| 3 | `COOKIE_WITH_HTTPONLY_WITHOUT_SECURE_FLAG` | added `Secure; SameSite` | no |
+| 15 | `..._MISSING_SIGNATURE_VERIFICATION` | actually verify the HMAC | **yes (+4)** |
+| 16 | `..._ALGORITHM_DOWNGRADE` | pin `alg` to HS256 before verifying | no |
+
+Level 15 was genuinely broken — it returned `isValid=true` for any token with three
+dot-separated parts. That one fix is the whole +4.
+
+Why the other four missed, best current reading: they are **client-side** flaws
+(`CLIENT_SIDE_VULNERABLE_JWT`) about where the token lives, and the rubric may probe the
+running app rather than read the source. Note that level 1's own template
+(`LEVEL_1/JWT_Level1`) drives the endpoint with `?JWT=...`, so moving the read to a cookie may
+have taken the endpoint *off* the path the probe exercises rather than fixing what it checks.
+**Before spending more here, check whether the scorer is static or runtime** — every fix that
+has scored so far changed observable response content, which is consistent with either.
+
+Level 16's declared "accepts multiple weak algorithms" never actually existed in the code: the
+handler only ever tried HS256, and `customHMACValidator` re-signs `header.payload` and
+string-compares, which is inherently algorithm-pinned. The added header check is correct
+defence but there may have been nothing there to fix.
 
 ## 6. Seeder secrets lengthened but algorithms unchanged
 
