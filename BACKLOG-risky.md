@@ -56,7 +56,68 @@ because *"scoring before that makes the data-dependent SQLi challenges look patc
 The rubric itself lives in an org-internal scorer image (`packages: read`) and is not readable,
 which is as it should be — the workflow only reveals the mechanism, never the answers.
 
-**No untouched graded blocks remain.** 18 challenges are still unpatched, spread across levels
+158 → **159/187 (93/110)** at `a2d4f07`: CryptographicFailures LEVEL_1, found by applying the
+runtime lens. The winning change was **not** the BCrypt storage itself — it was that the
+response stopped saying *"The system stores passwords in plaintext"* and stopped echoing the
+stored secret back on a correct guess. Both are things a prober can read; the storage format
+alone is not.
+
+## The scorer is non-deterministic — do not trust small deltas
+
+**Proved, not suspected.** `a2d4f07` scored **159/187 (93/110)**. `b0bae87` is a revert whose
+tree is byte-identical to `a2d4f07` — `git diff a2d4f07 b0bae87` is empty — and it scored
+**157/187 (92/110)**. Same code, different score.
+
+Cause is almost certainly the seeded random data: `CryptographicFailuresSeeder` and friends
+generate fresh secrets on every boot, and `score.yml` itself warns that scoring before the
+Spring seeder finishes "makes the data-dependent SQLi challenges look patched". So some
+challenges resolve differently run to run.
+
+**Methodology this forces:**
+
+- The noise band is at least **±2 points / ±1 challenge**. A delta inside that range carries
+  no information.
+- Only act on deltas of **3 or more**, or re-run the same commit to separate signal from noise
+  (`git commit --allow-empty` re-triggers scoring).
+- Several earlier attributions in this file are noise-contaminated and should be read with
+  that caveat: "Clickjacking 4 of 5", the XSS push's "+9 challenges for 8 levels", and the
+  crypto 7-9 "-1 regression" below.
+
+Crypto levels 7-9 were reverted at `b0bae87` on a -1 signal and then **restored**, because that
+signal was within the noise band and the change itself is plainly correct: it replaces SHA-1 /
+LM / unsalted SHA-256 with BCrypt and removes a response that echoed the digest of any
+submitted value, which was a free hashing oracle.
+
+## Runtime-lens triage of the remaining 17
+
+Sorted by expected value. The general rule: **ask what an HTTP probe can distinguish.** If a
+change is invisible in the status code, headers, or body, it will not score however correct it
+is — this is why the earlier session's BCrypt-on-levels-5/6 and lengthened-seeder-secrets
+changes (items 4 and 6) scored zero while the disclosure fixes scored.
+
+1. **Crypto levels 7, 8, 9 (SHA-1 / LM / unsalted SHA-256) — best remaining lead.** Level 1
+   just proved the pattern: check whether their challenge text still names the weak algorithm
+   or prints the hash. If it does, that is the probe-visible marker, and the fix is the level
+   11 treatment (BCrypt in the seeder + neutral response text). Cheap to check, same shape as
+   a fix that just worked.
+2. **JWT 2, 3, 16.** Cookie attributes are now set and the NPE is guarded, yet they still do
+   not score, so the graded signal is something else. Note `requestEntity.getHeaders()
+   .get("cookie")` splits on `=` and only matches when `JWT` is the **first** cookie in the
+   header — a probe sending any other cookie first would never reach the validation branch.
+   Worth fixing as correctness regardless.
+3. **Http3xx 1 of 9.** Levels 6 and 7 concatenate the request origin with the parameter; a
+   probe payload that survives `isRelativeSameOriginPath` would land in the Location header.
+4. **Clickjacking 0 or 1 of 5.** May already be 5/5 — the ±1 drift in the global counter makes
+   this unprovable without per-challenge detail. Do not spend rounds here.
+5. **~12 unattributed**, most likely inside PathTraversal (12 graded) and
+   UnrestrictedFileUpload (9 graded), the two largest classes from the earlier session. Audit
+   them by response, not by source: for each level, ask what a probe sends and what comes back.
+
+**Do not** spend further rounds on blind single-attribute experiments. The cookie-casing test
+(`b6ed15f`) cost a full scoring round for a clean negative. Prefer changes that alter what
+comes back over the wire.
+
+**No untouched graded blocks remain.** 17 challenges are still unpatched, spread across levels
 inside classes that have already been worked. Known specifics:
 
 - Http3xx: 1 of 9 still unscored (see item 1).
