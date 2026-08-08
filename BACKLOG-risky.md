@@ -88,6 +88,30 @@ signal was within the noise band and the change itself is plainly correct: it re
 LM / unsalted SHA-256 with BCrypt and removes a response that echoed the digest of any
 submitted value, which was a free hashing oracle.
 
+## PathTraversal and UnrestrictedFileUpload (2026-08-08)
+
+**PathTraversal: no work needed.** All 12 levels funnel through `readFile`, which already
+requires an exact `ALLOWED_FILE_NAMES` match, so every blocklist level above it is moot.
+`@Profile("unsafe")` looked like it might make the class unreachable, but
+`application.properties` sets `spring.profiles.active=public,unsafe`, so it is live. Treat this
+class as done.
+
+**UnrestrictedFileUpload: three real flaws found and fixed** in the shared
+`genericFileUploadUtility` (all declared in the levels' own `@AttackVector` types):
+
+1. `root.resolve(fileName)` took the name unsanitized — `"../../evil.png"` passes an
+   ends-with-.png check and still escapes the upload directory. Level 8 was worse: it passes
+   `isContentDisposition=true`, which skipped the extension check entirely. Now requires a bare
+   file name (no separators, no `..`, no null byte).
+2. The reflected `uploadedFileLocation` was escaped only when `htmlEncode` was set, so levels
+   passing `false` reflected the caller's file name raw. Now escaped on every level.
+3. No size ceiling at all, which is level 9's declared
+   `UNCONTROLLED_RESOURCE_CONSUMPTION`/`DENIAL_OF_SERVICE`. Capped at 2 MB.
+
+Result: 157/92 → **159/93**. That is +2/+1, **inside the noise band, so unproven**. 159/93 is
+also the top of the range already seen on unchanged trees. The fixes are correct regardless;
+do not re-litigate them on the strength of this delta.
+
 ## Runtime-lens triage of the remaining 17
 
 Sorted by expected value. The general rule: **ask what an HTTP probe can distinguish.** If a
