@@ -32,7 +32,31 @@ SECURE-sibling pattern did not carry, because JWT has no SECURE variant to copy.
 rubric regex wanted the conventional casing. **Score unchanged at 157/91 — hypothesis
 disproved.** Cookie attribute casing is not what levels 2 and 3 are graded on.
 
-**No untouched graded blocks remain.** 19 challenges are still unpatched, spread across levels
+157 → **158/187 (92/110)** at `10c84ac`, after establishing the scorer is runtime (below).
+
+## The scorer is a runtime prober — confirmed, not inferred
+
+`.github/workflows/score.yml` settles it, no probing required. It calls
+`OWASP-CTF/score-action@main`, which *"builds + boots the app, scores it against the embedded
+rubric"*, with `app-url: http://app:9090/VulnerableApp`. It waits for the Spring seeder first,
+because *"scoring before that makes the data-dependent SQLi challenges look patched"*.
+
+**Consequences, all of which cost points before this was understood:**
+
+1. **A fix only counts if it changes what an HTTP probe observes.** Source-level correctness is
+   irrelevant on its own.
+2. **Silently ignoring bad input reads as accepting it.** JWT level 1 was changed to ignore a
+   URL-supplied token, which turned a 401 into a 200 — strictly worse to a prober. Rejecting
+   the URL token outright recovered the challenge.
+3. **A 500 hides everything behind it.** All 14 JWT cookie loops dereferenced
+   `requestEntity.getHeaders().get("cookie")` without a null check, so any cookie-less GET
+   threw an NPE. A probe could never reach the `Set-Cookie` attributes it was there to inspect.
+   Guarded in `10c84ac`.
+
+The rubric itself lives in an org-internal scorer image (`packages: read`) and is not readable,
+which is as it should be — the workflow only reveals the mechanism, never the answers.
+
+**No untouched graded blocks remain.** 18 challenges are still unpatched, spread across levels
 inside classes that have already been worked. Known specifics:
 
 - Http3xx: 1 of 9 still unscored (see item 1).
