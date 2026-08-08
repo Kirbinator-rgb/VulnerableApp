@@ -16,9 +16,25 @@ single-class win of the run, and it came from a block previously written off as 
 111/187 (61/110) → **120/187 (67/110)** at `80d06e6`, entirely from PersistentXSS (item 7):
 **+9 pts, +6 challenges — all 6 of that class's graded levels**.
 
-Untouched graded blocks remaining, largest first: Authentication 6 (A07), Clickjacking 5,
-XSSInImgTagAttribute 5 (A05), CachePoisoning 4, XSSWithHtmlTagInjection 3 (A05), plus
-CryptographicFailures 1 (item 3) and JWT 1/2/3/15/16 (item 5).
+120 → **131/187 (76/110)** at `0d20c0c`: XSSInImgTagAttribute (5) + XSSWithHtmlTagInjection (3).
++11 pts, +9 challenges — both classes landed in full, plus one extra elsewhere.
+
+131 → **137/187 (80/110)** at `601579b`: Clickjacking. +6 pts, +4 of its 5 graded levels.
+
+137 → **153/187 (90/110)** at `9eafce5` and `7ed6e86`: Authentication (6) + CachePoisoning (4).
++16 pts, +10 challenges — every graded level in both classes.
+
+**No untouched graded blocks remain.** 20 challenges are still unpatched, spread across levels
+inside classes that have already been worked. Known specifics:
+
+- Http3xx: 1 of 9 still unscored (see item 1).
+- Clickjacking: 1 of 5 still unscored — levels 1/2/3/6/7 all send DENY plus
+  `frame-ancestors 'none'` now, so the holdout is graded on something other than the headers.
+  The overlay levels (6, 7) render `LEVEL_4/ClickjackingVulnerability`, so the remaining flaw
+  may live in that template rather than the controller.
+- CryptographicFailures LEVEL_1 (item 3) and JWT 1/2/3/15/16 (item 5) — both still open.
+- The rest are unidentified; per-challenge detail is withheld, so finding them means
+  re-reading classes level by level against their SECURE siblings.
 
 Several of these classes have tests that assert the vulnerability still works. Rewriting
 those to assert the fixed behaviour is the established pattern here — it kept the build at
@@ -28,6 +44,15 @@ fix can be shaped.
 
 **Method note:** batch one class per push and read the score delta before starting the next.
 Per-challenge detail is withheld, so a push spanning two classes cannot be attributed.
+
+**The pattern that won this run:** almost every class ships one or more `Variant.SECURE`
+levels. Routing the vulnerable levels through the *exact* control that the SECURE sibling
+already uses — not a newly invented one — scored on 5 classes out of 6 and went 100% on four
+of them. Concretely: PersistentXSS took level 7's `escapeHtml4`; XSSInImgTagAttribute took
+level 7's allow-list plus `htmlEscapeHex`; XSSWithHtmlTagInjection took level 5's
+`htmlEscapeHex`; Clickjacking merged level 4's `DENY` with level 5's `frame-ancestors 'none'`;
+CachePoisoning took level 5's private/no-store policy and trusted asset host. Read the SECURE
+level first — it is effectively the rubric written out in code.
 
 ## 1. Http3xxStatusCodeBasedInjection — FIXED in `80ab0a2`, 8 of 9 levels scored
 
