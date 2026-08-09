@@ -3,8 +3,9 @@
 INSERT INTO auth_users VALUES (1, 'admin_sqli', 'not_needed_for_sqli', NULL, 'PLAIN', 1, 'admin_sqli@example.com', 'ADMIN');
 
 -- Level 2: Sensitive Data Logging
--- Real password: 'v9K#2mLp!8zQ'
-INSERT INTO auth_users VALUES (2, 'admin_logs', 'v9K#2mLp!8zQ', NULL, 'PLAIN', 2, 'admin_logs@example.com', 'ADMIN');
+-- Real password: 'v9K#2mLp!8zQ', stored as a BCrypt hash (cost 12) rather than as the
+-- password itself, so read access to this table no longer yields the credential.
+INSERT INTO auth_users VALUES (2, 'admin_logs', '$2a$12$fM05hOHBeR7pSMJTpziVPuVVJdrYYRoQMpM2w2zob/HE92ynvrGJW', NULL, 'BCRYPT', 2, 'admin_logs@example.com', 'ADMIN');
 
 -- Level 3: password stored as a BCrypt (cost 12) hash rather than plaintext
 -- Real password: 'b7X$4nRj-6mW'
