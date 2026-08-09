@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
@@ -35,6 +36,20 @@ public class ControllerExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<String>(
                 ex.getExceptionStatusCode().getMessage(ex.getArgs(), messageBundle),
                 HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    /**
+     * An upload larger than the configured ceiling is a rejected request, not a server fault.
+     * Letting it fall through to the catch-all below answered 500, which both reports a defect that
+     * does not exist and hides the size limit that is doing its job.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<String> handleUploadTooLarge(
+            MaxUploadSizeExceededException ex, WebRequest request) {
+        LOGGER.info("Rejected an upload exceeding the configured maximum size");
+        return new ResponseEntity<String>(
+                "Input is invalid: file exceeds the maximum permitted size",
+                HttpStatus.PAYLOAD_TOO_LARGE);
     }
 
     @ExceptionHandler(Exception.class)
